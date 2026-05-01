@@ -1,0 +1,40 @@
+# macOS/editor noise
+.DS_Store
+*.swp
+*.tmp
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+
+# WhatsApp device identity and daemon runtime state
+whatsapp-daemon/auth.db
+whatsapp-daemon/auth.db-*
+whatsapp-daemon/control.sock
+whatsapp-daemon/daemon.log
+whatsapp-daemon/launchd.out.log
+whatsapp-daemon/launchd.err.log
+whatsapp-daemon/launchd.*.log
+whatsapp-daemon/health.json
+whatsapp-daemon/bin/*
+!whatsapp-daemon/bin/.gitkeep
+
+# Sensitive pipeline data and transient cursors
+db/
+media-cache/
+state/
+
+# Conservative local data excludes
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sock
+*.log
+tmp/
+config/whatsapp_groups.json
+whatsapp-daemon/bin/cron-prompts/

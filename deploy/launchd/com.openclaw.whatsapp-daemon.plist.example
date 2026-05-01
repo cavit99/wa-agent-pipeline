@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.whatsapp-daemon</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__WA_AGENT_PIPELINE_HOME__/whatsapp-daemon/bin/whatsapp-daemon</string>
+    <string>serve</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WA_AGENT_PIPELINE_HOME</key>
+    <string>__WA_AGENT_PIPELINE_HOME__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__WA_AGENT_PIPELINE_HOME__/whatsapp-daemon</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__WA_AGENT_PIPELINE_HOME__/whatsapp-daemon/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__WA_AGENT_PIPELINE_HOME__/whatsapp-daemon/launchd.err.log</string>
+</dict>
+</plist>

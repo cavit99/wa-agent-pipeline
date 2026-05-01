@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "groups": [
+    {
+      "jid": "111-222@g.us",
+      "label": "fixture-logistics",
+      "tenants": ["family"],
+      "purpose": "test fixture group",
+      "ingest_text": true,
+      "ingest_media_metadata": true,
+      "copy_media": true,
+      "index_embeddings": false,
+      "retention_days": 365
+    }
+  ]
+}

@@ -41,9 +41,9 @@ for downstream agents. No `wacli` code is vendored.
 
 Prerequisites: Go 1.26+, a CGO toolchain, and SQLite headers — on macOS
 that's `xcode-select --install`; on Debian/Ubuntu, `build-essential` and
-`libsqlite3-dev`. The daemon and Python scripts are cross-platform; only
-the example launchd deployment in [HOWTO-DEPLOY.md](whatsapp-daemon/HOWTO-DEPLOY.md)
-is macOS-specific.
+`libsqlite3-dev`. The daemon binary owns both ingest and read-side tooling;
+only the example launchd deployment in
+[HOWTO-DEPLOY.md](whatsapp-daemon/HOWTO-DEPLOY.md) is macOS-specific.
 
 Defaults assume the repo lives at `~/wa-agent-pipeline`; set
 `WA_AGENT_PIPELINE_HOME=/path/to/clone` if you put it elsewhere.
@@ -93,19 +93,19 @@ pipeline does no local extraction.
    `media-cache/<jid>/<msg_id>.<ext>`, then updates `media_local_path`
    + `media_hydrated_at`. `copy_media` defaults to `false`, so groups
    that only need text + metadata don't pay the bandwidth.
-3. **Unseen** — `scripts/whatsapp_unseen.py --tenant <name>`. Prints
-   markdown to stdout for messages since the per-tenant cursor at
+3. **Unseen** — `whatsapp-daemon/bin/whatsapp-daemon unseen --tenant <name>`.
+   Prints markdown to stdout for messages since the per-tenant cursor at
    `state/whatsapp_seen_ts.<name>`. Hydrated media without a cached
-   interpretation gets a `→ file: <path>` line; already-interpreted
-   media gets `→ extracted (<source>): <snippet>`. Cursor advancement
-   remains gated by successful daemon ingest run rows in
-   `whatsapp_ingest_runs`.
+   interpretation gets a `→ file: <path>` line; already-interpreted media
+   gets `→ extracted (<source>): <snippet>`. Cursor advancement remains
+   gated by successful daemon ingest run rows in `whatsapp_ingest_runs`.
 4. **Agent** — typically fired by cron on whatever cadence makes sense
    for your use case. For action-relevant `→ file:` lines, opens with
    its own `read` tool and writes a brief interpretation back to
    `media_extracted_text` + `media_extracted_by = '<agent-name>'`.
-5. **Orchestrator** — `scripts/whatsapp_cron_check.py`. Thin wrapper the
-   cron prompts call; forwards to `whatsapp_unseen.py`.
+5. **Orchestrator** — `whatsapp-daemon/bin/whatsapp-daemon cron-check`.
+   Thin wrapper the cron prompts call; forwards to the same Go unseen logic
+   and exits `3` on internal error.
 6. **On-demand backfill** — `whatsapp-daemon backfill --chat <jid> [--limit N]`.
    IPC client; talks to the running `serve` daemon over
    `whatsapp-daemon/control.sock`. Daemon issues a whatsmeow
@@ -131,14 +131,14 @@ multimodal file-read tool. It pairs naturally with agent runtimes like
 stream + a SQL writeback — anything from a cron-driven Claude/GPT
 script to Letta or a custom whatsmeow consumer can sit on top.
 
-A cron tick runs the unseen script and feeds its stdout into the
+A cron tick runs the daemon's unseen command and feeds its stdout into the
 agent prompt:
 
 ```sh
-timeout 120 python3 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/scripts/whatsapp_unseen.py" --tenant family
+timeout 120 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/whatsapp-daemon/bin/whatsapp-daemon" unseen --tenant family
 ```
 
-The script prints markdown grouped by chat. Media rows have two important
+The command prints markdown grouped by chat. Media rows have two important
 optional suffixes:
 
 ```text
@@ -152,8 +152,8 @@ locally and the agent can open it with its own read tool. `→ extracted
 
 Contract for any LLM agent runtime:
 
-1. Cron tick runs `whatsapp_unseen.py --tenant <agent>` and passes stdout to
-   the agent.
+1. Cron tick runs `whatsapp-daemon unseen --tenant <agent>` and passes stdout
+   to the agent.
 2. The agent opens only action-relevant `→ file:` paths.
 3. After reading, it writes a short durable summary back:
 
@@ -165,8 +165,8 @@ update whatsapp_messages
 ```
 
 Future ticks then show the cached `→ extracted (...)` text instead of asking
-the agent to reopen the same file. `scripts/whatsapp_cron_check.py` is a
-thin orchestrator wrapper; runtimes can also call `whatsapp_unseen.py`
+the agent to reopen the same file. `whatsapp-daemon cron-check` is a thin
+orchestrator wrapper; runtimes can also call `whatsapp-daemon unseen`
 directly.
 
 ## Tenants
@@ -178,7 +178,7 @@ array (e.g. `["family"]`, `["main"]`, or `["family", "main"]`). The
 listener writes every allowlisted message; tenant filtering happens at
 read time:
 
-- `scripts/whatsapp_unseen.py --tenant <name>` — required flag; uses
+- `whatsapp-daemon unseen --tenant <name>` — required flag; uses
   `state/whatsapp_seen_ts.<name>` cursor and emits only groups whose
   `tenants` array contains `<name>`.
 - `whatsapp-daemon backfill --chat <jid> --tenant <name>` — daemon-side
@@ -207,15 +207,15 @@ Each downstream agent's cron should call this pipeline with its own
 - `whatsapp-daemon/health.json` — status snapshot (`connected`,
   `last_message_at`, `queue_depth`, `media_failures_5m`, `ipc_listening`).
 - `whatsapp-daemon/control.sock` — Unix socket for backfill IPC, mode 0600.
-- `tests/` — pytest fixtures.
 
 ## Cron entry point
 
 ```sh
-timeout 120 python3 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/scripts/whatsapp_cron_check.py" --tenant <name>
+timeout 120 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/whatsapp-daemon/bin/whatsapp-daemon" cron-check --tenant <name>
 ```
 
-Do not invoke ingest / hydrate / unseen separately from a cron prompt.
+Use the `cron-check` entry point from cron prompts; it runs the same unseen
+logic and preserves the wrapper exit-code contract.
 
 ## Acknowledgements
 

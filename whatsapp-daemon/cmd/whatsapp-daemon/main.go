@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"openclaw/whatsapp-daemon/internal/health"
 	"openclaw/whatsapp-daemon/internal/listener"
 	"openclaw/whatsapp-daemon/internal/paths"
+	"openclaw/whatsapp-daemon/internal/unseen"
 	"openclaw/whatsapp-daemon/internal/writer"
 )
 
@@ -43,9 +45,9 @@ func run() (int, error) {
 		return 0, nil
 	}
 	switch mode {
-	case "pair", "serve", "backfill":
+	case "pair", "serve", "backfill", "unseen", "cron-check":
 	default:
-		return 1, fmt.Errorf("unknown mode %q; use pair, serve, or backfill", mode)
+		return 1, fmt.Errorf("unknown mode %q; use pair, serve, backfill, unseen, or cron-check", mode)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -55,6 +57,12 @@ func run() (int, error) {
 	defer cancel()
 	if mode == "backfill" {
 		return runBackfillClient(ctx, home, args)
+	}
+	if mode == "unseen" {
+		return runUnseenCommand(ctx, home, args)
+	}
+	if mode == "cron-check" {
+		return runCronCheckCommand(ctx, home, args)
 	}
 	return runDaemonMode(ctx, home, mode, args)
 }
@@ -220,11 +228,114 @@ func runBackfillClient(ctx context.Context, home string, args []string) (int, er
 	})
 }
 
+func runUnseenCommand(ctx context.Context, home string, args []string) (int, error) {
+	root := paths.Root(home)
+	fs := flag.NewFlagSet("whatsapp-daemon unseen", flag.ContinueOnError)
+	fs.Usage = func() {
+		printUsage(fs.Output())
+		fmt.Fprintln(fs.Output(), "\nOptions for unseen:")
+		fs.PrintDefaults()
+	}
+	dbPath := fs.String("db", paths.DefaultDB(root), "message-store sqlite db")
+	cfgPath := fs.String("config", config.DefaultPath(home), "allowlist config")
+	tenant := fs.String("tenant", "", "tenant scope for cursor + group filtering")
+	statePath := fs.String("state", "", "override cursor state path")
+	noAdvance := fs.Bool("no-advance", false, "don't write the new cutoff or surfaced-media markers")
+	var since optionalFloat
+	fs.Var(&since, "since-hours", "hours of history. Default: since last successful advance, with 30 min overlap. Pass 0 for full history")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0, nil
+		}
+		return 1, err
+	}
+	if *tenant == "" {
+		return 1, fmt.Errorf("unseen requires --tenant <name>")
+	}
+	state := *statePath
+	if state == "" {
+		state = unseen.DefaultStatePath(root, *tenant)
+	}
+	var sinceHours *float64
+	if since.set {
+		value := since.value
+		sinceHours = &value
+	}
+	return 0, unseen.Run(ctx, unseen.Options{
+		DBPath:     *dbPath,
+		ConfigPath: *cfgPath,
+		Tenant:     *tenant,
+		StatePath:  state,
+		SinceHours: sinceHours,
+		NoAdvance:  *noAdvance,
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+	})
+}
+
+func runCronCheckCommand(ctx context.Context, home string, args []string) (int, error) {
+	root := paths.Root(home)
+	fs := flag.NewFlagSet("whatsapp-daemon cron-check", flag.ContinueOnError)
+	fs.Usage = func() {
+		printUsage(fs.Output())
+		fmt.Fprintln(fs.Output(), "\nOptions for cron-check:")
+		fs.PrintDefaults()
+	}
+	dbPath := fs.String("db", paths.DefaultDB(root), "message-store sqlite db")
+	cfgPath := fs.String("config", config.DefaultPath(home), "allowlist config")
+	tenant := fs.String("tenant", "", "tenant scope for cursor + group filtering")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0, nil
+		}
+		return 3, err
+	}
+	if *tenant == "" {
+		return 3, fmt.Errorf("cron-check requires --tenant <name>")
+	}
+	err := unseen.Run(ctx, unseen.Options{
+		DBPath:     *dbPath,
+		ConfigPath: *cfgPath,
+		Tenant:     *tenant,
+		StatePath:  unseen.DefaultStatePath(root, *tenant),
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+	})
+	if err != nil {
+		return 3, err
+	}
+	return 0, nil
+}
+
+type optionalFloat struct {
+	set   bool
+	value float64
+}
+
+func (f *optionalFloat) Set(value string) error {
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return err
+	}
+	f.set = true
+	f.value = parsed
+	return nil
+}
+
+func (f *optionalFloat) String() string {
+	if !f.set {
+		return ""
+	}
+	return strconv.FormatFloat(f.value, 'g', -1, 64)
+}
+
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: whatsapp-daemon <pair|serve|backfill> [options]")
+	fmt.Fprintln(out, "Usage: whatsapp-daemon <pair|serve|backfill|unseen|cron-check> [options]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Subcommands:")
-	fmt.Fprintln(out, "  pair      create or reuse whatsapp-daemon/auth.db and print a WhatsApp QR code when pairing is needed")
-	fmt.Fprintln(out, "  serve     require an existing pair, listen for allowlisted group messages, write DB rows, media, health.json, and control.sock")
-	fmt.Fprintln(out, "  backfill  ask the running serve daemon to request ON_DEMAND history sync over control.sock")
+	fmt.Fprintln(out, "  pair        create or reuse whatsapp-daemon/auth.db and print a WhatsApp QR code when pairing is needed")
+	fmt.Fprintln(out, "  serve       require an existing pair, listen for allowlisted group messages, write DB rows, media, health.json, and control.sock")
+	fmt.Fprintln(out, "  backfill    ask the running serve daemon to request ON_DEMAND history sync over control.sock")
+	fmt.Fprintln(out, "  unseen      print unseen parent-group messages for a tenant")
+	fmt.Fprintln(out, "  cron-check  cron wrapper around unseen; exits 3 on internal error")
 }

@@ -25,7 +25,8 @@ cd "$WA_AGENT_PIPELINE_HOME/whatsapp-daemon"
 go build -o bin/whatsapp-daemon ./cmd/whatsapp-daemon
 ```
 
-`./bin/whatsapp-daemon help` prints `pair`, `serve`, and `backfill`.
+`./bin/whatsapp-daemon help` prints `pair`, `serve`, `backfill`, `unseen`,
+and `cron-check`.
 
 ## 2. Pair
 
@@ -75,7 +76,7 @@ After about a minute:
 ```sh
 cat "$WA_AGENT_PIPELINE_HOME/whatsapp-daemon/health.json"
 tail -f "$WA_AGENT_PIPELINE_HOME/whatsapp-daemon/daemon.log"
-python3 "$WA_AGENT_PIPELINE_HOME/scripts/whatsapp_unseen.py" --no-advance
+"$WA_AGENT_PIPELINE_HOME/whatsapp-daemon/bin/whatsapp-daemon" unseen --tenant family --no-advance
 ```
 
 Expect `connected: true`, `ipc_listening: true`, and no message bodies in logs.
@@ -109,7 +110,7 @@ expired; those rows are kept with `media_hydration_status='failed: expired'`.
 An OpenClaw cron prompt can use the wrapper directly:
 
 ```sh
-exec timeout=120 python3 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/scripts/whatsapp_cron_check.py" --tenant family
+exec timeout=120 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/whatsapp-daemon/bin/whatsapp-daemon" cron-check --tenant family
 ```
 
 The agent should open action-relevant `→ file:` paths with its multimodal read
@@ -140,5 +141,5 @@ PY
 ## Rollback
 
 Unload the launchd agent, keep the DB/media cache, and point your cron prompt
-away from `whatsapp_cron_check.py`. The daemon's inserts are idempotent, so
-stopping it does not delete data.
+away from `whatsapp-daemon cron-check`. The daemon's inserts are idempotent,
+so stopping it does not delete data.

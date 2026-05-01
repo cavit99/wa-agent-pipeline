@@ -47,6 +47,22 @@ cd whatsapp-daemon && go build -o bin/whatsapp-daemon ./cmd/whatsapp-daemon
 Scan the QR with your phone. `serve` runs in the foreground and writes DB rows
 to `../db/wa_pipeline.db`.
 
+### Finding your group JIDs
+
+WhatsApp doesn't surface group JIDs in the UI. Easiest way to capture
+them: pair the daemon and run `serve` with `enabled: false` (the default
+in the example config). Send any message into your target group from
+your phone. The daemon will refuse to ingest it but will log the JID
+to `whatsapp-daemon/daemon.log`:
+
+```text
+message_dropped_disallowed chat_jid=120363406219631820@g.us msg_id=3EB...
+```
+
+Copy the `chat_jid` value into `config/whatsapp_groups.json`, flip
+`enabled` to `true`, and `kill -HUP $(pgrep -f whatsapp-daemon)`
+(or just restart) to hot-reload.
+
 ## Architecture
 
 Hard rule: **deterministic stages stay dumb; interpretation lives in

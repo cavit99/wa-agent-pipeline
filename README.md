@@ -23,6 +23,20 @@ and downloads media on receive while URLs are still fresh. It also
 adds default-deny allowlisting, per-tenant cursors, and on-demand
 history backfill via WhatsApp's own protocol.
 
+## Related: wacli
+
+[steipete/wacli](https://github.com/steipete/wacli) is the closest
+neighbour: another Go/whatsmeow tool with a local SQLite/FTS store,
+continuous sync, media download, and anchor-based history backfill.
+If you want a general human-operated WhatsApp CLI — search, send
+text/files, reactions, contacts, groups, presence — use `wacli`.
+
+This repo is narrower: an allowlisted ingest daemon for LLM agents.
+It skips the interactive CLI surface and instead adds default-deny
+group allowlisting, per-tenant read cursors, a shared Unix-socket
+daemon for backfill, and a stdout-markdown + SQL writeback contract
+for downstream agents. No `wacli` code is vendored.
+
 ## Quickstart
 
 Prerequisites: Go 1.26+, a CGO toolchain, and SQLite headers — on macOS
@@ -219,10 +233,13 @@ The daemon stands on:
 Architectural patterns drew from public read-throughs of
 [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp),
 [aldinokemal/go-whatsapp-web-multidevice](https://github.com/aldinokemal/go-whatsapp-web-multidevice),
-and [steipete/wacrawl](https://github.com/steipete/wacrawl) — none
-of their code is forked or vendored here, but their structure helped
-shape decisions like file-copy hydration vs. live ingest, IPC for
-backfill, and the writer's idempotent upsert shape.
+[steipete/wacrawl](https://github.com/steipete/wacrawl), and
+[steipete/wacli](https://github.com/steipete/wacli) — none of their
+code is forked or vendored here, but their structure helped shape
+decisions like file-copy hydration vs. live ingest, IPC for backfill,
+and the writer's idempotent upsert shape. wacli is the most directly
+comparable tool on the same whatsmeow stack; broader feature surface
+(sending, groups, contacts, reactions), single-tenant by design.
 
 ## License
 

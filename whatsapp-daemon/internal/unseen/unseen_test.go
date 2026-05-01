@@ -135,6 +135,11 @@ func TestRunFormatsMessagesAdvancesCursorAndMarksHydratedRows(t *testing.T) {
 	) values(?, ?, ?, ?, ?, ?, ?)`, "run-1", 1777625800, 1777625940, "test", 0, 2, "ok"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`insert into whatsapp_ingest_runs(
+		run_id, started_at, finished_at, mode, dry_run, allowed_group_count, status
+	) values(?, ?, ?, ?, ?, ?, ?)`, "run-pending", 1777625900, 1777625990, "test", 0, 2, "pending"); err != nil {
+		t.Fatal(err)
+	}
 	config := writeConfig(t, `{
 		"enabled": true,
 		"groups": [

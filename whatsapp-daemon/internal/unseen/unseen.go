@@ -434,6 +434,7 @@ func writeOutput(out io.Writer, cutoff int64, msgs []messageRow) {
 
 func latestOKIngestFinishedAt(ctx context.Context, db *sql.DB) (int64, bool, error) {
 	var ts sql.NullInt64
+	// status='ok' means message text persisted; media failures are per-message.
 	err := db.QueryRowContext(ctx, `select max(finished_at) from whatsapp_ingest_runs
             where status = 'ok' and dry_run = 0 and finished_at is not null`).Scan(&ts)
 	if err != nil {

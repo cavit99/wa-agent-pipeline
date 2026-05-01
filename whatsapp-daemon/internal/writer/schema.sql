@@ -65,6 +65,7 @@ create table if not exists whatsapp_ingest_runs (
   updated_messages integer not null default 0,
   skipped_messages integer not null default 0,
   media_copied integer not null default 0,
+  -- status='ok' means message text persisted; media failures live on whatsapp_messages.media_hydration_status.
   status text not null,
   error text
 );

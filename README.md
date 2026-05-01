@@ -192,6 +192,12 @@ in the schema. Visibility is derived from the current allowlist
 config at read time, so a config edit that adds or removes tenants
 from a group changes that group's tenant visibility retroactively.
 
+Note: visibility shifts via config are immediate at the SQL/query layer,
+but the default `unseen` output is cursor-gated. When adding a tenant to
+an existing group, run with `--since-hours 0` (or delete
+`state/whatsapp_seen_ts.<tenant>`) to surface older messages; otherwise
+the new tenant only sees rows after their cursor first lands.
+
 Each downstream agent's cron should call this pipeline with its own
 `--tenant` flag.
 

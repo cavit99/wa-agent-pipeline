@@ -126,6 +126,10 @@ func TestMediaWriteIsAtomicBeforeDBPathUpdate(t *testing.T) {
 	if rows[0]["media_local_path"] != res.MediaPath || rows[0]["media_hydration_status"] != "ok" || rows[0]["media_hydration_attempts"].(int64) != 1 {
 		t.Fatalf("db media fields wrong: %#v", rows)
 	}
+	rows, _ = w.db.Query("select media_copied, status from whatsapp_ingest_runs where run_id=?", StableRunID(res.ID, 1714470000))
+	if rows[0]["media_copied"].(int64) != 1 || rows[0]["status"] != "ok" {
+		t.Fatalf("run media accounting wrong: %#v", rows)
+	}
 }
 
 func TestMediaFailureDoesNotPointAtPartialFile(t *testing.T) {
@@ -150,6 +154,10 @@ func TestMediaFailureDoesNotPointAtPartialFile(t *testing.T) {
 	rows, _ := w.db.Query("select media_local_path, media_hydration_status, media_hydration_attempts from whatsapp_messages where id=?", res.ID)
 	if rows[0]["media_local_path"] != nil || rows[0]["media_hydration_status"] != "failed" || rows[0]["media_hydration_attempts"].(int64) != 1 {
 		t.Fatalf("db points at failed media: %#v", rows)
+	}
+	rows, _ = w.db.Query("select status, finished_at, media_copied from whatsapp_ingest_runs where run_id=?", StableRunID(res.ID, 1714470000))
+	if rows[0]["status"] != "ok" || rows[0]["finished_at"].(int64) != 1714470000 || rows[0]["media_copied"].(int64) != 0 {
+		t.Fatalf("media failure run should remain cursor-eligible without copied media: %#v", rows)
 	}
 }
 

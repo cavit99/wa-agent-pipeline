@@ -207,6 +207,7 @@ func (w *Writer) Write(ctx context.Context, ev Event) (Result, error) {
 	thash := TextHash(ev.Text, ev.MediaTitle)
 	var res Result
 	res.ID = id
+	var runID string
 	err := w.db.WithTx(func() error {
 		existing, err := w.db.QueryTx("select text_hash from whatsapp_messages where id=?", id)
 		if err != nil {
@@ -261,7 +262,8 @@ func (w *Writer) Write(ctx context.Context, ev Event) (Result, error) {
 		if err := w.refreshFTSTx(id, ev); err != nil {
 			return err
 		}
-		return w.recordRun(id, now, res)
+		runID, err = w.recordRun(id, now, res, len(ev.MediaBytes) > 0)
+		return err
 	})
 	if err != nil {
 		return Result{}, err
@@ -269,14 +271,16 @@ func (w *Writer) Write(ctx context.Context, ev Event) (Result, error) {
 	if len(ev.MediaBytes) > 0 {
 		path, err := w.writeMedia(ev)
 		if err != nil {
-			_ = w.markMediaFailure(id)
+			if markErr := w.markMediaFailure(id, runID); markErr != nil {
+				return res, fmt.Errorf("write media: %w; mark media failure: %v", err, markErr)
+			}
 			return res, err
 		}
 		res.MediaPath = path
 		if !res.Inserted {
 			res.Updated = true
 		}
-		if err := w.markMediaOK(id, path); err != nil {
+		if err := w.markMediaOK(id, runID, path); err != nil {
 			return res, err
 		}
 	}
@@ -334,7 +338,7 @@ func (w *Writer) sourcePKFor(ev Event) int64 {
 	return 0
 }
 
-func (w *Writer) recordRun(id string, now int64, res Result) error {
+func (w *Writer) recordRun(id string, now int64, res Result, mediaPending bool) (string, error) {
 	inserted, updated, skipped := 0, 0, 0
 	switch {
 	case res.Inserted:
@@ -345,7 +349,11 @@ func (w *Writer) recordRun(id string, now int64, res Result) error {
 		skipped = 1
 	}
 	runID := StableRunID(id, now)
-	return w.db.ExecTx(
+	status := "ok"
+	if mediaPending {
+		status = "pending"
+	}
+	return runID, w.db.ExecTx(
 		`insert into whatsapp_ingest_runs(
 		  run_id,started_at,finished_at,mode,dry_run,
 		  allowed_group_count,scanned_messages,inserted_messages,updated_messages,skipped_messages,
@@ -359,7 +367,7 @@ func (w *Writer) recordRun(id string, now int64, res Result) error {
 		  skipped_messages=whatsapp_ingest_runs.skipped_messages+excluded.skipped_messages,
 		  status=excluded.status`,
 		runID, now, now, "whatsmeow-live", 0,
-		w.allowedGroupCount, 1, inserted, updated, skipped, 0, "ok",
+		w.allowedGroupCount, 1, inserted, updated, skipped, 0, status,
 	)
 }
 
@@ -399,25 +407,45 @@ func (w *Writer) writeMedia(ev Event) (string, error) {
 	return final, nil
 }
 
-func (w *Writer) markMediaOK(id, path string) error {
+func (w *Writer) markMediaOK(id, runID, path string) error {
 	now := w.now().Unix()
-	return w.db.Exec(
-		`update whatsapp_messages
+	return w.db.WithTx(func() error {
+		if err := w.db.ExecTx(
+			`update whatsapp_messages
 		    set media_local_path=?, media_hydrated_at=?, media_hydration_status='ok',
 		        media_hydration_attempts=media_hydration_attempts+1, media_surfaced_at=null
 		  where id=?`,
-		path, now, id,
-	)
+			path, now, id,
+		); err != nil {
+			return err
+		}
+		return w.db.ExecTx(
+			`update whatsapp_ingest_runs
+			    set status='ok', media_copied=media_copied+1
+			  where run_id=?`,
+			runID,
+		)
+	})
 }
 
-func (w *Writer) markMediaFailure(id string) error {
-	return w.db.Exec(
-		`update whatsapp_messages
-		    set media_hydration_status='failed',
-		        media_hydration_attempts=media_hydration_attempts+1
-		  where id=?`,
-		id,
-	)
+func (w *Writer) markMediaFailure(id, runID string) error {
+	return w.db.WithTx(func() error {
+		if err := w.db.ExecTx(
+			`update whatsapp_messages
+			    set media_hydration_status='failed',
+			        media_hydration_attempts=media_hydration_attempts+1
+			  where id=?`,
+			id,
+		); err != nil {
+			return err
+		}
+		return w.db.ExecTx(
+			`update whatsapp_ingest_runs
+			    set status='ok'
+			  where run_id=?`,
+			runID,
+		)
+	})
 }
 
 func StableMessageID(chatJID, msgID, senderJID string, ts, sourcePK int64) string {

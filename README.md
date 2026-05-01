@@ -96,8 +96,13 @@ pipeline does no local extraction.
 ## Agent integration
 
 This repo is meant to be consumed by an LLM-driven agent, ideally with a
-multimodal file-read tool. A cron tick runs the unseen script and feeds
-its stdout into the agent prompt:
+multimodal file-read tool. It pairs naturally with agent runtimes like
+**OpenClaw** and **Hermes Agent**, but the contract is just a stdout
+stream + a SQL writeback — anything from a cron-driven Claude/GPT
+script to Letta or a custom whatsmeow consumer can sit on top.
+
+A cron tick runs the unseen script and feeds its stdout into the
+agent prompt:
 
 ```sh
 timeout 120 python3 "${WA_AGENT_PIPELINE_HOME:-$HOME/wa-agent-pipeline}/scripts/whatsapp_unseen.py" --tenant family

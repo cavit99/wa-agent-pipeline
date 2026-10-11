@@ -14,10 +14,11 @@ type Store interface {
 }
 
 type Handler struct {
-	Config *config.Manager
-	Store  Store
-	Log    *health.Logger
-	Status *health.Status
+	Config      *config.Manager
+	Store       Store
+	Log         *health.Logger
+	Status      *health.Status
+	OnCommitted func(string)
 }
 
 func (h *Handler) Handle(ctx context.Context, ev writer.Event) (bool, error) {
@@ -42,6 +43,9 @@ func (h *Handler) HandleResult(ctx context.Context, ev writer.Event) (bool, writ
 	}
 	if h.Status != nil {
 		h.Status.MessageAt(time.Now())
+	}
+	if h.OnCommitted != nil && (res.Inserted || res.Updated) {
+		h.OnCommitted(ev.ChatJID)
 	}
 	if h.Log != nil {
 		h.Log.Printf("message_ingested chat_jid=%s msg_id=%s db_id=%s inserted=%t updated=%t media=%t",

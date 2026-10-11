@@ -79,7 +79,10 @@ tail -f "$WA_AGENT_PIPELINE_HOME/whatsapp-daemon/daemon.log"
 "$WA_AGENT_PIPELINE_HOME/whatsapp-daemon/bin/whatsapp-daemon" unseen --tenant family --no-advance
 ```
 
-Expect `connected: true`, `ipc_listening: true`, and no message bodies in logs.
+Expect `connected: true`, `logged_in: true`, `ipc_listening: true`, and no
+message bodies in logs. If WhatsApp reports a permanent disconnect such as a
+replaced stream, the daemon writes `connected: false` and `logged_in: false`
+before exiting so launchd can restart it instead of leaving stale IPC online.
 
 ## Backfill
 

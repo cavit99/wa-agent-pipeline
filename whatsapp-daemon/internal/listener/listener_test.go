@@ -54,6 +54,26 @@ func TestHandlerAppliesGroupPolicyBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestWakeFollowsCommittedSelectedWrite(t *testing.T) {
+	cfg := managerFor(t, `{"enabled":true,"groups":[{"jid":"120@g.us","label":"work","tenants":["main"]}]}`)
+	store := &fakeStore{}
+	calls := 0
+	h := &Handler{Config: cfg, Store: store, OnCommitted: func(jid string) {
+		if store.calls != 1 || jid != "120@g.us" {
+			t.Fatal("wake before commit or for wrong chat")
+		}
+		calls++
+	}}
+	_, _ = h.Handle(context.Background(), writer.Event{ChatJID: "other@g.us"})
+	if calls != 0 {
+		t.Fatal("disallowed event signalled")
+	}
+	_, _ = h.Handle(context.Background(), writer.Event{ChatJID: "120@g.us", MsgID: "one"})
+	if calls != 1 {
+		t.Fatal("committed event not signalled")
+	}
+}
+
 func managerFor(t *testing.T, body string) *config.Manager {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "groups.json")

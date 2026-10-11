@@ -51,6 +51,7 @@ type Status struct {
 	mu   sync.Mutex
 
 	Connected     bool  `json:"connected"`
+	LoggedIn      bool  `json:"logged_in"`
 	LastMessageAt int64 `json:"last_message_at"`
 	QueueDepth    int   `json:"queue_depth"`
 	IPCListening  bool  `json:"ipc_listening,omitempty"`
@@ -65,6 +66,16 @@ func NewStatus(path string) *Status {
 func (s *Status) SetConnected(v bool) {
 	s.mu.Lock()
 	s.Connected = v
+	if !v {
+		s.LoggedIn = false
+	}
+	s.mu.Unlock()
+}
+
+func (s *Status) SetConnection(connected, loggedIn bool) {
+	s.mu.Lock()
+	s.Connected = connected
+	s.LoggedIn = loggedIn
 	s.mu.Unlock()
 }
 
@@ -98,11 +109,12 @@ func (s *Status) Write() error {
 	body := struct {
 		LastMessageAt   int64 `json:"last_message_at"`
 		Connected       bool  `json:"connected"`
+		LoggedIn        bool  `json:"logged_in"`
 		QueueDepth      int   `json:"queue_depth"`
 		IPCListening    bool  `json:"ipc_listening,omitempty"`
 		MediaFailures5m int   `json:"media_failures_5m"`
 		UpdatedAt       int64 `json:"updated_at"`
-	}{s.LastMessageAt, s.Connected, s.QueueDepth, s.IPCListening, len(s.mediaFailures), time.Now().Unix()}
+	}{s.LastMessageAt, s.Connected, s.LoggedIn, s.QueueDepth, s.IPCListening, len(s.mediaFailures), time.Now().Unix()}
 	s.mu.Unlock()
 	b, err := json.MarshalIndent(body, "", "  ")
 	if err != nil {

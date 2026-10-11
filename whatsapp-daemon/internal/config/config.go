@@ -81,23 +81,23 @@ func Load(path string) ([]Group, time.Time, error) {
 		jid := strings.TrimSpace(raw.JID)
 		label := strings.TrimSpace(raw.Label)
 		if jid == "" || label == "" {
-			return nil, time.Time{}, fmt.Errorf("every group needs jid and label")
+			return nil, time.Time{}, fmt.Errorf("every chat needs jid and label")
 		}
-		if !strings.HasSuffix(jid, "@g.us") {
-			return nil, time.Time{}, fmt.Errorf("refusing non-group JID: %s", jid)
+		if !supportedChatJID(jid) {
+			return nil, time.Time{}, fmt.Errorf("refusing unsupported chat JID: %s", jid)
 		}
 		if seenJID[jid] {
-			return nil, time.Time{}, fmt.Errorf("duplicate group jid: %s", jid)
+			return nil, time.Time{}, fmt.Errorf("duplicate chat jid: %s", jid)
 		}
 		if seenLabel[label] {
-			return nil, time.Time{}, fmt.Errorf("duplicate group label: %s", label)
+			return nil, time.Time{}, fmt.Errorf("duplicate chat label: %s", label)
 		}
 		if raw.Tenants == nil {
-			return nil, time.Time{}, fmt.Errorf("group %s: tenants must be set explicitly (e.g. [\"family\"])", jid)
+			return nil, time.Time{}, fmt.Errorf("chat %s: tenants must be set explicitly (e.g. [\"family\"])", jid)
 		}
 		tenants, err := normalizeTenants(*raw.Tenants)
 		if err != nil {
-			return nil, time.Time{}, fmt.Errorf("group %s tenants: %w", jid, err)
+			return nil, time.Time{}, fmt.Errorf("chat %s tenants: %w", jid, err)
 		}
 		seenJID[jid] = true
 		seenLabel[label] = true
@@ -232,6 +232,26 @@ func boolDefault(v *bool, fallback bool) bool {
 		return fallback
 	}
 	return *v
+}
+
+func supportedChatJID(jid string) bool {
+	parts := strings.Split(jid, "@")
+	if len(parts) != 2 || parts[0] == "" {
+		return false
+	}
+	switch parts[1] {
+	case "g.us":
+		return true
+	case "s.whatsapp.net", "lid":
+		for _, r := range parts[0] {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeTenants(values []string) ([]string, error) {

@@ -15,6 +15,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
+	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	waHistorySync "go.mau.fi/whatsmeow/proto/waHistorySync"
 	waWeb "go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -178,6 +179,9 @@ func Serve(ctx context.Context, opts Options) error {
 	var historySyncMu sync.Mutex
 	historySyncClosed := false
 	handlerID := bundle.Client.AddEventHandler(func(raw any) {
+		if handleConnectionEvent(opts, raw, connected, fatal) {
+			return
+		}
 		switch evt := raw.(type) {
 		case *events.Message:
 			select {
@@ -189,20 +193,6 @@ func Serve(ctx context.Context, opts Options) error {
 				if opts.Log != nil {
 					opts.Log.Printf("message_queue_full chat_jid=%s msg_id=%s", evt.Info.Chat.String(), evt.Info.ID)
 				}
-			}
-		case *events.Connected:
-			setConnected(opts, true, "connected")
-			select {
-			case connected <- struct{}{}:
-			default:
-			}
-		case *events.Disconnected:
-			setConnected(opts, false, "disconnected")
-		case *events.LoggedOut:
-			setConnected(opts, false, "logged_out")
-			select {
-			case fatal <- fmt.Errorf("WhatsApp logged out: %s", evt.Reason.String()):
-			default:
 			}
 		case *events.PairSuccess:
 			if opts.Log != nil {
@@ -317,9 +307,52 @@ func sqliteDSN(path string) string {
 	return "file:" + path + "?_foreign_keys=on&_busy_timeout=5000"
 }
 
+func handleConnectionEvent(opts Options, raw any, connected chan<- struct{}, fatal chan<- error) bool {
+	switch evt := raw.(type) {
+	case *events.Connected:
+		setConnection(opts, true, true, "connected")
+		select {
+		case connected <- struct{}{}:
+		default:
+		}
+		return true
+	case *events.Disconnected:
+		setConnection(opts, false, false, "disconnected")
+		return true
+	case *events.LoggedOut:
+		setConnection(opts, false, false, "logged_out")
+		select {
+		case fatal <- fmt.Errorf("WhatsApp logged out: %s", evt.Reason.String()):
+		default:
+		}
+		return true
+	case *events.StreamReplaced:
+		setConnection(opts, false, false, "stream_replaced")
+		select {
+		case fatal <- fmt.Errorf("WhatsApp stream replaced by another client"):
+		default:
+		}
+		return true
+	default:
+		if evt, ok := raw.(events.PermanentDisconnect); ok {
+			setConnection(opts, false, false, "permanent_disconnect")
+			select {
+			case fatal <- fmt.Errorf("WhatsApp permanent disconnect: %s", evt.PermanentDisconnectDescription()):
+			default:
+			}
+			return true
+		}
+		return false
+	}
+}
+
 func setConnected(opts Options, connected bool, state string) {
+	setConnection(opts, connected, connected, state)
+}
+
+func setConnection(opts Options, connected, loggedIn bool, state string) {
 	if opts.Health != nil {
-		opts.Health.SetConnected(connected)
+		opts.Health.SetConnection(connected, loggedIn)
 		_ = opts.Health.Write()
 	}
 	health.LogConnection(opts.Log, state)
@@ -623,6 +656,16 @@ func normalizeMessage(evt *events.Message) (writer.Event, whatsmeow.Downloadable
 		ev.MessageType = "text"
 	}
 
+	if poll := pollCreation(msg); poll != nil {
+		ev.MessageType = "poll"
+		ev.Text = pollText(poll)
+		return ev, nil
+	}
+	if msg.GetPollUpdateMessage() != nil {
+		ev.MessageType = "poll_vote"
+		return ev, nil
+	}
+
 	switch {
 	case msg.GetImageMessage() != nil:
 		img := msg.GetImageMessage()
@@ -656,6 +699,34 @@ func normalizeMessage(evt *events.Message) (writer.Event, whatsmeow.Downloadable
 		ev.MessageType = fallbackMessageType(info.Type)
 	}
 	return ev, nil
+}
+
+func pollCreation(msg *waE2E.Message) *waE2E.PollCreationMessage {
+	if msg == nil {
+		return nil
+	}
+	for _, poll := range []*waE2E.PollCreationMessage{
+		msg.GetPollCreationMessage(), msg.GetPollCreationMessageV2(), msg.GetPollCreationMessageV3(),
+		msg.GetPollCreationMessageV5(), msg.GetPollCreationMessageV6(),
+	} {
+		if poll != nil {
+			return poll
+		}
+	}
+	if nested := msg.GetPollCreationMessageV4().GetMessage(); nested != nil {
+		return pollCreation(nested)
+	}
+	return nil
+}
+
+func pollText(poll *waE2E.PollCreationMessage) string {
+	lines := []string{"Poll: " + strings.TrimSpace(poll.GetName())}
+	for _, option := range poll.GetOptions() {
+		if name := strings.TrimSpace(option.GetOptionName()); name != "" {
+			lines = append(lines, "- "+name)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func setMedia(ev *writer.Event, kind, mimeType, title, url string, size uint64) {

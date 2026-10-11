@@ -1,6 +1,6 @@
 # wa-agent-pipeline
 
-Personal pipeline for ingesting WhatsApp group-chat messages into
+Personal pipeline for ingesting allowlisted WhatsApp group and direct-chat messages into
 local storage and surfacing them to LLM agents. One paired
 linked-device, one local sqlite store, multi-tenant on the read
 side so multiple downstream agents can each see their own scoped
@@ -33,7 +33,7 @@ text/files, reactions, contacts, groups, presence — use `wacli`.
 
 This repo is narrower: an allowlisted ingest daemon for LLM agents.
 It skips the interactive CLI surface and instead adds default-deny
-group allowlisting, per-tenant read cursors, a shared Unix-socket
+chat allowlisting, per-tenant read cursors, a shared Unix-socket
 daemon for backfill, and a stdout-markdown + SQL writeback contract
 for downstream agents. No `wacli` code is vendored.
 
@@ -61,21 +61,27 @@ cd whatsapp-daemon && go build -o bin/whatsapp-daemon ./cmd/whatsapp-daemon
 Scan the QR with your phone. `serve` runs in the foreground and writes DB rows
 to `../db/wa_pipeline.db`.
 
-### Finding your group JIDs
+### Finding chat JIDs
 
-WhatsApp doesn't surface group JIDs in the UI. Easiest way to capture
-them: pair the daemon and run `serve` with `enabled: false` (the default
-in the example config). Send any message into your target group from
-your phone. The daemon will refuse to ingest it but will log the JID
+WhatsApp doesn't surface group or LID-based direct-chat JIDs in the UI.
+Easiest way to capture them: pair the daemon and run `serve` with
+`enabled: false` (the default in the example config). Send any message
+in the target chat from your phone. The daemon will refuse to ingest it
+but will log the JID
 to `whatsapp-daemon/daemon.log`:
 
 ```text
 message_dropped_disallowed chat_jid=120363406219631820@g.us msg_id=3EB...
 ```
 
-Copy the `chat_jid` value into `config/whatsapp_groups.json`, flip
+Copy the exact `chat_jid` value into `config/whatsapp_groups.json`, flip
 `enabled` to `true`, and `kill -HUP $(pgrep -f whatsapp-daemon)`
 (or just restart) to hot-reload.
+
+Supported entries are group JIDs (`...@g.us`), phone-number direct-chat
+JIDs (`...@s.whatsapp.net`), and LID direct-chat JIDs (`...@lid`). Each
+entry remains exact-match and default-deny; wildcards and broadcast JIDs
+are rejected. The JSON key remains `groups` for backwards compatibility.
 
 ## Architecture
 
@@ -86,7 +92,7 @@ pipeline does no local extraction.
 
 1. **Daemon ingest** — `whatsapp-daemon/bin/whatsapp-daemon serve`.
    A dedicated whatsmeow linked-device listener receives messages
-   for the configured group JIDs, default-denies every other JID,
+   for the configured chat JIDs, default-denies every other JID,
    and writes rows directly to `db/wa_pipeline.db`.
 2. **Media cache** — for groups with `copy_media: true`, the daemon
    downloads bytes on receive and writes them atomically into

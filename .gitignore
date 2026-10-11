@@ -37,4 +37,15 @@ state/
 *.log
 tmp/
 config/whatsapp_groups.json
+config/whatsapp_groups.json.bak-*
+.clawpatch/
+whatsapp-daemon/.openclaw/
+# Agent bootstrap files are local runtime scaffolding, not daemon source.
+whatsapp-daemon/AGENTS.md
+whatsapp-daemon/BOOTSTRAP.md
+whatsapp-daemon/HEARTBEAT.md
+whatsapp-daemon/IDENTITY.md
+whatsapp-daemon/SOUL.md
+whatsapp-daemon/TOOLS.md
+whatsapp-daemon/USER.md
 whatsapp-daemon/bin/cron-prompts/

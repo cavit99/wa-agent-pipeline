@@ -111,7 +111,8 @@ func runDaemonMode(ctx context.Context, home, mode string, args []string) (int, 
 	if err := store.EnsureGroups(context.Background(), cfg.Groups()); err != nil {
 		return 1, err
 	}
-	h := &listener.Handler{Config: cfg, Store: store, Log: log, Status: status}
+	changes := &control.Changes{}
+	h := &listener.Handler{Config: cfg, Store: store, Log: log, Status: status, OnCommitted: changes.Notify}
 	opts := auth.Options{AuthDB: *authDB, Config: cfg, Handler: h, Health: status, Log: log}
 
 	if mode == "serve" {
@@ -121,6 +122,7 @@ func runDaemonMode(ctx context.Context, home, mode string, args []string) (int, 
 				Config:     cfg,
 				Status:     status,
 				Log:        log,
+				Changes:    changes,
 				Executor: &control.DaemonBackfillExecutor{
 					DBPath:   *dbPath,
 					Client:   state.Client,

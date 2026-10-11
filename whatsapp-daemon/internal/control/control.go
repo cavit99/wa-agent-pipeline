@@ -25,6 +25,7 @@ import (
 
 const (
 	OpBackfill = "backfill"
+	OpWatch    = "watch_ingest"
 
 	EventRequestSent         = "request_sent"
 	EventHistorySyncReceived = "history_sync_received"
@@ -80,6 +81,7 @@ type Server struct {
 	Executor   Executor
 	Status     *health.Status
 	Log        *health.Logger
+	Changes    *Changes
 
 	listener  *net.UnixListener
 	cancel    context.CancelFunc
@@ -187,7 +189,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	}
 	_ = conn.SetReadDeadline(time.Time{})
 	req = normalizeRequest(req)
-	if req.Op != OpBackfill {
+	if req.Op != OpBackfill && req.Op != OpWatch {
 		_ = enc.Encode(doneEvent(VerdictError, fmt.Sprintf("unsupported op %q", req.Op)))
 		return
 	}
@@ -206,6 +208,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	}
 	if req.Tenant != "" && !group.HasTenant(req.Tenant) {
 		_ = enc.Encode(doneEvent(VerdictError, "jid_not_owned_by_tenant"))
+		return
+	}
+	if req.Op == OpWatch {
+		if req.Tenant == "" || len(group.Tenants) != 1 || !group.HasTenant(req.Tenant) {
+			_ = enc.Encode(doneEvent(VerdictError, "change subscription requires an exact single-tenant chat"))
+			return
+		}
+		s.watchChanges(ctx, conn, req, enc)
 		return
 	}
 

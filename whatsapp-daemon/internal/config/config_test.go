@@ -67,9 +67,9 @@ func TestManagerReloadReportsAddedJIDs(t *testing.T) {
 
 func TestLoadRejectsBroadOrAmbiguousConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "groups.json")
-	writeConfig(t, path, `{"enabled":true,"groups":[{"jid":"447@s.whatsapp.net","label":"dm","tenants":["family"]}]}`)
+	writeConfig(t, path, `{"enabled":true,"groups":[{"jid":"status@broadcast","label":"broadcast","tenants":["family"]}]}`)
 	if _, _, err := Load(path); err == nil {
-		t.Fatal("expected non-group jid rejection")
+		t.Fatal("expected unsupported jid rejection")
 	}
 	writeConfig(t, path, `{"enabled":true,"groups":[{"jid":"1@g.us","label":"x","tenants":["family"]},{"jid":"1@g.us","label":"y","tenants":["family"]}]}`)
 	if _, _, err := Load(path); err == nil {
@@ -82,5 +82,28 @@ func TestLoadRejectsBroadOrAmbiguousConfig(t *testing.T) {
 	writeConfig(t, path, `{"enabled":true,"groups":[{"jid":"1@g.us","label":"x"}]}`)
 	if _, _, err := Load(path); err == nil {
 		t.Fatal("expected missing tenants rejection")
+	}
+}
+
+func TestLoadAcceptsExplicitDirectChatJIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "groups.json")
+	writeConfig(t, path, `{"enabled":true,"groups":[
+		{"jid":"491716084242@s.whatsapp.net","label":"andrea-pn","tenants":["main"]},
+		{"jid":"259970209689732@lid","label":"andrea-lid","tenants":["main"]}
+	]}`)
+	chats, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chats) != 2 || chats[0].JID != "491716084242@s.whatsapp.net" || chats[1].JID != "259970209689732@lid" {
+		t.Fatalf("direct chat JIDs not loaded: %#v", chats)
+	}
+}
+
+func TestLoadRejectsMalformedDirectChatJID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "groups.json")
+	writeConfig(t, path, `{"enabled":true,"groups":[{"jid":"4917*84242@s.whatsapp.net","label":"wildcard","tenants":["main"]}]}`)
+	if _, _, err := Load(path); err == nil {
+		t.Fatal("expected malformed direct chat jid rejection")
 	}
 }
